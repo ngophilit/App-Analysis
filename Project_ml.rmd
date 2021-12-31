@@ -1,0 +1,570 @@
+---
+title: "Các yếu tố ảnh hưởng đến người dùng đánh giá ứng dụng trên Google Play Store"
+date: "24/11/2021"
+author: "Nhóm 2"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: 
+      collapsed: false
+      smooth_scroll: false
+    umber_sections: true
+    df_print: paged
+---
+
+| STT |   MSSV   | Thành viên            | Nội dung phụ trách | ghi chú |
+|:---:|:--------:|:----------------------|:-------------------|:--------|
+| 61  | 19133065 | **Nguyễn Thanh Tùng** | Phần 1 + 2 + 3     |         |
+| 18  | 20133036 | **Nguyễn Thành Đồng** | Phần 4             |         |
+| 20  | 19133022 | **Hồng Tiến Hào**     | Phần 5             |         |
+| 31  | 18133024 | **Ngô Phi Lít**       | Phần 6             |         |
+
+#### *Giáo viên hướng dẫn*: **Quách Đình Hoàng**
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+```
+
+------------------------------------------------------------------------
+
+## Phần 1 - Giới thiệu
+
+### 1.1 Nguồn gốc của dữ liệu nghiên cứu
+
+-   Tập dữ liêu phân tích với các đối tượng dữ liệu là các [ứng dụng trên google playstore](https://play.google.com/) trong thời gian từ 2016-2018.
+-   **Cách thu thập dữ liệu:** crawl bằng Jquery
+-   **Ý tưởng:** Android nắm giữ khoảng 53,2% thị trường điện thoại thông minh, trong khi iOS là 43%. Dữ liệu ứng dụng trên Cửa hàng Google Play có tiềm năng to lớn để thúc đẩy các doanh nghiệp sản xuất ứng dụng 1 thành công. Thông tin chi tiết từ tập dữ liệu là hữu ích để các nhà phát triển ắm bắt thị trường Android!
+-   **Link tập dữ liệu nguồn:** <https://www.kaggle.com/lava18/google-play-store-apps>
+
+### 1.2 Các biến nghiên cứu
+
+-   **Các biến liên tục**: Rating, Price
+-   **Các biến phân lọai**: Category, Type, Content Rating, Genres, Last Updated, Current Ver, Android Ver
+-   **Các biến rời rạc**: Reviews
+
+### 1.3 Chi tiết các thuộc tính
+
+1.  **App**: tên ứng dụng
+2.  **Rating**: điểm xếp hạng của ứng dụng (từ 0 tới 5)
+3.  **Reviews**: số lượng nhận xét về ứng dụng
+4.  **Size**: kích thước về ứng dụng
+5.  **Installs**: số lượng lượt tải về của ứng dụng
+6.  **Type**: ứng dụng thuộc loại trả phí hay free
+7.  **Price**: giá của ứng dụng
+8.  **Content Rating**: Nhóm tuổi mà ứng dụng nhắm đến (Everyone, Teen, Other)
+9.  **Genres**: thể loại khác (một ứng dụng có thể thuộc nhiều thể loại)
+10. **Last Updated**: ngày cập nhập phiên bản cuối cùng
+11. **Current Ver**: phiên bản hiện tại
+12. **Android Ver**: phiên bản android tối thiểu để sử dụng ứng dụng
+13. **Category**: thể loại chính của ứng dụng
+
+### 1.4. Load Dataset
+
+```{r load-data, echo=FALSE}
+#setwd("D:/Onedrive/Major/Information System/AI/Language/R/HCMUTE_QuachDinhHoang/Project/data_cleanAnalytics/Report")
+DataSet <- read.csv("./Data/googleplaystore.csv")
+head(DataSet)
+```
+
+------------------------------------------------------------------------
+
+## Phần 2 - Tiền xử lý
+
+```{r load-package-p1, include=FALSE}
+#library(tidyverse)
+library(dplyr) # Data wrangling and manipulation
+library(lubridate)
+library(stringr)
+```
+
+### 2.1. Kiểm tra kiểu dữ liệu
+
+Xem qua data
+
+```{r check overview, echo=FALSE}
+glimpse(DataSet)
+```
+**Nhận thấy:**
+- `Size` và `Installs` đang ở kiểu character cần chuyển về numeric
+- `Reviews` nên chuyển về numeric
+- `Android.Ver` Ta sẽ chỉ số thể hiện cho bản cập nhật lớn
+- `Price` nên loại bỏ symbols tiền tệ và chuyển về numeric
+- `Content.Rating` chia thành nhiều danh mục nhưng ta sẽ chia lại thành 2 nhóm
+- `Android.Ver` ta sẽ chỉ lấy ký tự đầu của version (phiên bản cập nhật lớn) và đối với các thiết bị không xác định được version ta chuyển về 0
+
+```{r Transform datatype, echo=FALSE}
+data_clean <- DataSet %>%
+  mutate(
+    # lower case cho category
+    Category = tolower(Category),
+    # Loại bỏ một số ký tự và chuyển Installs đặt thành số
+    Installs = gsub("\\+", "", as.character(Installs)),
+    Installs = as.numeric(gsub(",", "", Installs)),
+    # Nếu giá trị khác Free và Paid ta xem nó như Free
+    Type = ifelse(Type %in% c("Free", "Paid"), Type, "Free"),
+    # Loại bỏ character M ở phía
+    # thay k = 0 và chuyển thành numeric 
+    Size = gsub("M", "", Size),
+    Size = ifelse(grepl("k", Size), 0, as.numeric(Size)),
+    # chuyển Reviews thành numeric
+    Reviews = as.numeric(as.character(Reviews)),
+    # Loại symbol và chuyển thành numeric
+    Price = as.numeric(gsub("\\$", "", as.character(Price))),
+    Content.Rating = ifelse(Content.Rating == 'Everyone','Non-restricted','Restricted'),
+    # Đổi "Varies with device" thành 0 vì không xác định được Version
+    Min.Android.Ver = gsub("Varies with device", "0", Android.Ver),
+    # Lấy số đầu (phiên bản lớn)
+    Min.Android.Ver = as.numeric(substr(Min.Android.Ver, start = 1,stop = 3)),
+  )
+glimpse(data_clean)
+#summary(data_clean)
+```
+
+### 2.2. Kiểm tra sự đúng dắn của dữ liệu
+
+```{r summary data, echo=FALSE}
+summary(DataSet)
+```
+
+**Nhận thấy:** `Rating` có giá trị lớn 5 không hợp lệ ta cần loại những giá trị này
+
+
+```{r Remove incorrect value}
+data_clean <- data_clean %>%
+  filter(
+    #Tương tự những giá trị rating không hợp lệ sẽ bị xóa 
+    Rating <= 5
+  )
+glimpse(data_clean)
+```
+
+#### 2.3. Xem xét loại các trường không sử dụng
+- `Current.Ver`
+- `Last.Updated`
+- `Android.Ver`
+
+```{r Remove columns}
+data_clean <- data_clean %>%
+  mutate(
+    # Loại bỏ columns không dùng
+    Android.Ver = NULL,
+    Current.Ver = NULL,
+    Last.Updated = NULL
+  )
+dim(data_clean)
+```
+
+------------------------------------------------------------------------
+
+## Phần 3: Thiết kế Nghiên cứu:
+
+1.  Xét về mặt đặc tính của nghiên cứu thì nghiên cứu này là nghiên cứu quan sát (observational study) vì chúng ta chỉ quan sát và ghi nhận thực trạng đặc điểm/đặc tính và sự kiện diễn ra trong nghiên cứu mà **không có tác động đến đối tượng nghiên cứu.**
+2.  Như đã đề cập ở phần trên dữ liệu được thu thập bằng crawl trên trang web một cách tự động. Vì thế các phần tử trong tập dữ liệu này hoàn toàn là ngẫu nhiên và xác suất được chọn của các ứng dụng là như nhau. chính vì vậy, cách lấy mẫu ở đây là chọn mẫu theo xác suất và phương pháp chọn mẫu là phương pháp chọn **mẫu ngẫu nhiên đơn giản (Simple random sample)**
+
+## Phần 4 - Phân tích thăm dò - EDA
+
+#### Trước khi chúng ta bắt đầu phân tích dữ liệu thì chúng ta sẽ trả lời một cách **chủ quan** các câu hỏi đã đề ra:
+
+1.  Từ 2016 - 2018 các ứng dụng liên quan đến **giáo dục, giải trí** đang rất thịnh hành, chính vì thế theo ý kiến chủ quan thì ta có thể dự đoán rằng các ứng dụng này thường sẽ có `Rating` cao hơn so với các mục còn lại.
+2.  Bị giới hạn hoặc buộc phải xác thực độ tuổi có thể ảnh hưởng đến `rating` của ứng dụng. Do có ở những độ tuổi cao hơn thì yêu cầu đối với một ứng dụng là cao hơn so với những người có độ tuổi nhỏ hơn.
+3.  Cuối cùng, một ứng dụng phải trả thì nó sẽ đem lại những trải nghiệm tốt hơn cũng như luôn có trách nhiệm với người dùng của mình hơn, vì thế nên độ hài lòng của khách hàng có vẻ như **ứng dụng trả phí sẽ cao hơn các ứng dụng miễn phí**
+
+
+```{r load packages part 3, include=FALSE}
+library(ggplot2)
+```
+
+### 4.1. Tổng quan dữ liệu
+
+#### Tần suất `Category` và `Type`
+
+```{r EDA-Overview, echo=FALSE}
+ggplot(data_clean)+ 
+  geom_bar(aes(y = Category,fill = Type), position = position_stack(reverse = TRUE))+
+  theme(legend.position = "right")
+unique(data_clean$Category)
+```
+
+**Nhận xét :**
+
+-   Có thể thấy các hạng mục: family, game, tools, , chiếm đại đa số các ứng dụng
+-   Cùng với đó số ứng dụng `Free` vượt trội hoàn toàn cùng so với `Paid` cũng là điều dễ hiểu
+-   Qua đây ta sẽ chọn các danh mục phổ biến
+
+### 4.2. Ảnh hưởng của `Category` đến`Rating`
+
+#### 4.2.1.
+
+```{r EDA-compare, echo=FALSE}
+Category1 <- data_clean[data_clean$Category == c('game','business',
+                                               'eudcation','entertainment',
+                                               'lifestyle','dating'),]
+ggplot(data = Category1, aes(x = Category, y = Rating),ylim = c(0,5)) +
+  geom_boxplot() +
+  stat_boxplot(geom = "errorbar") +
+  stat_summary(fun.y = mean, col = "red", geom = "point", size = 3) +
+  ggtitle("Side by side Boxplots compare Category (popular) vs Rating")
+
+```
+
+```{r EDA-summary, echo=FALSE}
+tapply(Category1$Rating, Category1$Category, summary)
+```
+
+**Nhận xét (chưa xong)**
+
+-   **Center:** Trung vị rating của các ứng dụng giáo dục là cao nhất và cao hơn khá đáng kể so với các danh mục còn lại.
+-   **Spread:** Xếp hạng của các danh mục có range khác nhau, rộng nhất là DATING và hẹp nhất là ENTERTAINMENT
+-   **Outliers:** Chỉ có 2 nhóm không có giá trị ngoại biên đó là EDUCATION và ENTERTAINMENT
+
+#### 4.2.2. Phân bố của các danh mục phổ biển
+
+```{r probability densiny function, echo=FALSE}
+xbar <- tapply(Category1$Rating, Category1$Category, mean)
+s <- tapply(Category1$Rating, Category1$Category, sd)
+Category1$normal.density <- apply(Category1, 1, function(x){
+  dnorm(as.numeric(x["Rating"]),
+        xbar[x["Category"]], s[x["Category"]])})
+
+ggplot(Category1, aes(x = Rating)) +
+  geom_histogram(aes(y = ..density..), 
+                 bins = 20,
+                 fill = "grey", col = "black") +
+  facet_grid(Category ~ .) +
+  geom_density(col = "red", lwd = 1) +
+  geom_line(aes(y = normal.density), col = "blue", lwd = 1) +
+  ggtitle("Probability Densiny Function")
+```
+
+**Nhận xét:**
+
+-   Ta có, đường màu xanh biểu diễn hàm mật độ phân phối chuẩn với trung bình và độ lệch chuẩn của mẫu tương ứng, đường màu xanh là hàm mật độ thực tế, ta thấy LIFESTYLE và DATING là những mẫu có biến rating có hàm mật độ xác suất gần với phân phối chuẩn nhất.
+
+#### 4.2.3. So sánh phân bố mẫu và phân phối chuẩn
+
+```{r QQplot, echo=FALSE}
+Category1$intercept <- apply(Category1, 1, function(x){xbar[x["Category"]]})
+Category1$slope <- apply(Category1, 1, function(x){s[x["Category"]]})
+ggplot(Category1, aes(sample = Rating)) +
+  stat_qq() +
+  facet_grid(Category ~ .) +
+  geom_abline(data = Category1, aes(intercept = intercept, slope = slope)) +
+  ggtitle("QQPlot compare distribution sample vs standard")
+```
+
+**Nhận xét:**
+
+-   Trên biểu đồ QQplot ta thấy sự liên quan giữa các giá trị mong đợi(truc hoành) và các giá trị quan sát được (trục tung) của các mẫu đều có vẻ như nằm trên đường thẳng chéo, vì thế nên các mẫu này đều khá gần với phân phối chuẩn.
+-   Điều này giúp chúng ta có thể yên tâm hơn khi sử dụng định lý giới hạn trung tâm để thực hiện các kiểm định thống kê.
+
+### 4.3. Đối tượng nhà phát triển hướng đến
+
+#### 4.3.1. Độ tuổi hướng đến `Content.Rating`
+
+```{r boxplot content rating}
+ggplot(data_clean, aes(x = interaction(Content.Rating), y = Rating, fill = Content.Rating)) +
+  geom_boxplot()+
+  stat_boxplot(geom = "errorbar")+
+  stat_summary(fun.y = mean, col = "black", geom = "point", size = 2)+
+  labs(title = "Biểu đồ Boxplots so sánh ứng dụng bị hạn chế và không hạn chế độ tuổi",
+         x = "Đối tượng",
+         y = "Rating")
+```
+
+```{r summary Content rating}
+tapply(data_clean$Rating, data_clean$Content.Rating, summary)
+```
+
+**Nhận xét về `Content.Rating`:**
+
+- **Center**: Trung vị `Rating` của các ứng dụng giới hạn độ tuổi và không giới hạn độ tuổi là như nhau
+- **Spread**: `Rating` của hai mẫu này có range bằng nhau
+- **Outliers**: Có vẻ như `Rating` của 2 loại ứng dụng này tương đối phân tán khi có khá nhiều giá trị ngoại biên
+
+```{r histogram content rating, echo=FALSE}
+xbar <- tapply(data_clean$Rating, data_clean$Content.Rating, mean)
+s <- tapply(data_clean$Rating, data_clean$Content.Rating, sd)
+data_clean$normal.density <- apply(data_clean, 1, function(x){
+  dnorm(as.numeric(x["Rating"]),
+        xbar[x["Content Rating"]], s[x["Content Rating"]])})
+
+ggplot(data_clean, aes(x = Rating)) +
+  geom_histogram(aes(y = ..density..), 
+                 bins = 20,
+                 fill = "grey", col = "black") +
+  facet_grid(Content.Rating ~ .) +
+  geom_density(col = "red", lwd = 1) +
+  geom_line(aes(y = normal.density), col = "blue", lwd = 1) +
+  ggtitle("Probability distribution density function Histogram")+
+  labs(title = "Biểu đồ Histogram biểu diễn hàm mật độ phân bố xác suất",
+         x = "Rating",
+         y = "Density")
+```
+
+```{r QQplot content rating, echo=FALSE}
+data_clean$intercept <- apply(data_clean, 1, function(x){xbar[x["Content Rating"]]})
+data_clean$slope <- apply(data_clean, 1, function(x){s[x["Content Rating"]]})
+ggplot(data_clean, aes(sample = Rating)) +
+  stat_qq() +
+  facet_grid(Content.Rating ~ .) +
+  geom_abline(data = data_clean, aes(intercept = intercept, slope = slope)) +
+  labs(title = "Biểu đồ QQplot so sánh phân bố mẫu với phân bố chuấn",
+         x = "Theoretical",
+         y = "Sample")
+```
+
+**Nhận xét Histogram và QQplot:** ta thấy hình dạng của 2 biểu đồ histogram và qqplot gần giống với hình dạng của **phân phối chuân.**
+
+#### 3.3.2. Ứng dụng trả phí
+
+```{r Boxplot Type, echo=FALSE}
+ggplot(data = data_clean, aes (x=Type, y = Rating, fill = Type))+
+  geom_boxplot(size = 1, outlier.color = "black", outlier.size = 2)+
+  stat_boxplot(geom = "errorbar")+
+  stat_summary(fun.y = mean, col = "black", geom = "point", size = 2)+
+  labs(title = "Biểu đồ Side by side Boxplots so sánh ứng dụng trả phí và miễn phí",
+         x = "Thể loại",
+         y = "Đánh giá")
+```
+
+**Nhận xét về `Type`:**
+
+-   Ở biểu đồ box plot, chúng ta **không thấy rõ sự khác biệt giữa** `Free` và `Paid` có ý nghĩa thống kê, hay nói cách khác sự khác biệt giữa `Paid` và `Free` có là thật sự hay chỉ đơn thuần do ngẫu nhiên.
+-   Do đó, chúng ta có thể bắt đầu với giả thuyết rằng **`Paid` có múc `Rating` cao hơn `Free`.**
+
+------------------------------------------------------------------------
+
+## Phần 5 - Phân tích thống kê
+
+```{r load-package-p4, include=FALSE}
+library(psych)
+library(ggcorrplot) #Vẽ ma trận tương quan
+```
+
+### 5.1. Kiểm định
+
+#### 5.1.1. Các danh mục cụ thể có ảnh hưởng đến `Rating`
+
+-   Suy diễn thống kê cho thống kê hiện tại thuộc loại so sánh nhiều hơn 2 nhóm
+
+-   Kiểm định thống kê phù hợp cho câu hỏi này là ANOVA F-test
+
+-   Xác định các giả thuyết
+
+    -   Null hypothesis $H_0:$ Không có sự khác biệt`về`Rating\` giữa các danh mục ứng dụng khác nhau
+    -   Alternative hypothesis $H_A:$Có sự khác biệt về `Rating` giữa các danh mục ứng dụng khác nhau
+
+```{r ANOVA test}
+anova <- aov(Rating ~ Category, data = Category1)
+summary(anova)
+```
+
+-   $p$-value = \$ \< \alpha = 0.05\$ nên ta bác bỏ giả thiết $H_0$
+-   Có sự khác biệt giữa các nhóm với nhau về điểm `Rating`
+-   Chúng ta sẽ tiếp tục phân tích hậu định để biết có sự khác biệt ở nhóm nào.
+
+```{r Tukey HSD}
+#plot(TukeyHSD(anova, conf.level = 0.95), las=1)
+TukeyHSD(anova, conf.level = 0.95)
+```
+
+##### Kết luận Q1:
+
+-   Dữ liệu cũng như kết quả của nghiên cứu trên không đưa ra bằng chứng cho việc chúng ta cứ phát hành một ứng dụng hoặc giải trí thì `Rating` sẽ cao.
+-   Vì đây là 1 nghiên cứu quan sát, trường hợp duy nhất mà từ có mối quan hệ có thể suy ra nhân quả (association implies causation) là khi nghiên cứu là một thí nghiệm ngẫu nhiên tuy nhiên để thu thập dữ liệu toàn bộ ứng dụng trên CH Play là rất khó ([hơn 2,6 triệu ứng dụng vào 2018](https://www.businessofapps.com/data/app-stores/)), vì thế rất khó đảm bảo tính ngẫu nhiên của thí nghiệm. Có thể hiểu sự khác biết này là phần lớn người dùng smartphone Android để giải trí và học tập nên các ứng dung có `rating` cao hơn.
+
+#### 5.1.2. `Content.Rating`
+
+```{r linear regression content rating, echo= FALSE}
+summary(lm(Rating~Content.Rating, data = data_clean))
+```
+
+##### Kết luận Q2:
+
+-   Giả thuyết này có thể giải thích bằng mô hình hồi quy tuyến tính `Rating` = $\alpha + \beta($`Content.Rating`$) + \epsilon$
+-   Hệ số hồi quy (regression confficient) $= 0.05$, có nghĩa là nội dung bị hạn chế `Restricted` có `Rating` cao hơn `Non-Restricted` là $0.05$ điểm
+-   Trị số $P < 2e-16$ cũng chính là trị số P của t-test
+-   Hệ số xác định $R^2 = 0.001$ có nghĩa là biến `Content.Rating` giải thích $0.1\%$ (khá thấp) biến thiên `Rating` giữa các ứng dụng
+
+#### 5.1.3. `Type`
+
+```{r 5.1.3}
+library(scales)
+ggplot(data_clean, aes(x=Reviews, y=Rating)) +
+  scale_x_continuous(trans='log10', labels=comma) +
+  geom_point(aes(col=Type)) +
+  labs(title="Android App Ratings vs Number of Reviews", subtitle="Google Playstore Dataset", y="Rating from 1 to 5 stars", x="Number of Reviews") +
+  theme_linedraw()
+summary(lm(Rating~Type, data = data_clean))
+```
+
+##### Kết luận Q3:
+
+-   Giả thuyết này có thể giải thích bằng mô hình hồi quy tuyến tính `Rating` = $\alpha + \beta($`Type`$) + \epsilon$
+-   Output cho thấy rằng trung bình `Rating` của `Paid` cao hơn `Free` là 0.08 điểm và có ý nghĩa thống kê ($P = 0.0003$)
+-   Mặc dù có ý nghĩa thống kê những yêu tố `Type` giải thích 0.14% tổng phương sai của `Rating`
+
+### 5.2. Tương quan
+
+```{r Correlation }
+Var_Q <- c("Reviews","Size","Installs","Price","Min.Android.Ver","Rating")
+Q_clean_cor <- cor(na.omit(data_clean[Var_Q]))
+corplot<- ggcorrplot(Q_clean_cor, type = "lower",lab = TRUE)
+corplot
+```
+
+**Nhận xét ma trận tương quan Q - Q:**
+
+-   
+
+-   
+
+-   
+
+### 5.3. Hồi quy đa biến
+
+```{r Multiple Regression, echo=FALSE}
+
+```
+
+------------------------------------------------------------------------
+
+## Phần 6 - Machine learning
+
+### 6.1. Giới thiệu mô hình
+- Trong phần này chúng ta sẽ tạo mô hình để dự đoán `Reviews` dựa vào các biến `Installs`, `Size`, `Rating` và `Price`.
+- Trong phần này chúng ta sẽ sử dụng hồi quy đa biến - `Multiple Regression` và `k Nearest Neighbor Regression` để xây dựng mô hình cho tập dữ liệu của chúng ta.
+- Chúng ta sẽ sử dụng dữ liệu sau khi đã làm sạch để xây dựng mô hình - `data_clean`.
+
+### 6.2 Muiltiple Regression.
+### 6.2.1 Xây dựng mô hình.
+- Đầu tiên chúng ta cần phân vùng dữ liệu thành training(80%) và validation(20%).
+
+```{r}
+train_data <- sample_frac(data_clean, 0.8)
+sid <- as.numeric(rownames(train_data))
+vali_data <- data_clean[-sid,]
+```
+
+- Tiếp theo chúng ta sẽ sử dụng `Multiple Regression` để xây dựng mô hình.
+
+```{r}
+lm_model <- lm(Installs ~ Size + Reviews + Rating + Price , data = train_data)
+summary(lm_model)
+```
+- Dựa trên mô hình ta thấy được giá trị "p" của 2 biến Rating và Price là khoảng 0.7677 và 0.6904 và cũng có nghĩa là 2 biến này lần lượt có 76,77% và 69,04% khả năng là dự đoán này không có ý nghĩa với mô hình của chúng ta.
+```{r}
+lm_model <- lm(Installs ~ Size + Reviews, data = train_data, )
+summary(lm_model)
+```
+
+### 6.2.2 Đánh giá mô hình trên tập vali_data.
+
+```{r}
+lm_model <- lm(Installs ~ Size + Reviews, data = vali_data, )
+summary(lm_model)
+```
+- Đối với mô hình này chúng ta thấy độ đo R-squared trên tập train khá thấp, nó vào khoảng 0.32. Còn trên tập validation thì cực kỳ thấp - khoảng 0.07. Vậy nên ta bỏ qua mô hình này.
+
+### 6.3 k Nearest Neighbor Regression
+### 6.3.1 Xây dựng mô hình.
+- Ở mô hình này chúng ta sẽ sử dụng hàm `knnreg` của thư viện `caret` để xây dựng mô hình này.
+
+```{r }
+library(caret)
+tuneGrid <- expand.grid( k = seq(1, 10, by = 1))
+knn_model <- train(Reviews ~ Size +  Installs , data = train_data, method = 'knn', na.action = na.omit, tuneGrid = tuneGrid)
+knn_model
+```
+- Dựa theo độ đo R-squared thì chúng ta được mô hình cuối cùng là mô hình có R-squared tốt nhất.
+
+### 6.3.2 Đánh giá Mô hình
+
+- Ta áp dụng mô hình dự đoán trên vào tập validation
+
+```{r }
+knn_model <- train(Reviews ~ Size +  Installs , data = vali_data, method = 'knn', na.action = na.omit, tuneGrid = tuneGrid)
+knn_model
+```
+- Ta thấy trên tập validation mô hình cho hệ số R-squared tốt nhất. Xét mô hình trên tập train ứng với hệ số k ta sử dụng cho mô hình này thì chúng khá tương đồng với nhau.
+- Vậy nên nhóm chấp nhận dùng mô hình hiện tại để tiến hành dự đoán.
+
+### 6.4 Dự đoán
+
+```{r predict rating}
+test_data <- slice(vali_data,91:100) 
+predictions = predict(knn_model, newdata = test_data)
+test_data$pre <- predictions
+test_data
+test_data %>% dplyr::select(Reviews, pre) %>% head
+```
+
+- Từ mô hình trên chúng ta thấy được kết quả dự đoán được tạm ổn.
+
+### 6.5 Hạn chế.
+- Hiệu quả dự đoán của mô hình vẫn chưa cao.
+- Chưa nắm chắc được kiến thức để áp dụng các thuộc tính khác mang kiểu dự liệu `char` để xây dựng mô hình.
+
+### 6.6 Hướng phát triển để khắc phục hạn chế.
+- Nhóm quyết định sẽ áp dụng mô hình `Multiple Regression` để dự đoán `Reviews` dựa trên tất cả thuộc tính khác.
+
+```{r }
+library(stringr)
+M1 <- lm(Reviews ~., data = train_data)
+#autoplot(M1)
+summary(M1)
+#boxcox(M1)
+```
+
+- Ta vẫn thấy hệ số R-squared chưa tốt lắm.
+- Ta sử dụng .... và dùng log(Reviews)
+
+```{r }
+M2 <- lm(log(Reviews) ~., data = train_data)
+#autoplot(M2)
+summary(M2)
+```
+- Đối với mô hình này thì ta thấy được hệ số R-squared tốt hơn nhiều.
+- Tiếp đến ta sẽ áp dụng mô hình này trên tập validation để đánh giá mô hình.
+
+```{r }
+M3 <- lm(log(Reviews) ~., data = vali_data)
+#autoplot(M3)
+summary(M3)
+M4 <- lm(log(Reviews) ~ Installs, data = vali_data)
+#autoplot(M4)
+summary(M4)
+
+```
+- Kết quả của mô hình vẫn rất tốt trên tập validation.
+- Bây giờ ta sẽ tiến hành dự đoán với mô hình này.
+
+```{r predict rating}
+test_data <- slice(vali_data,91:100) 
+predictions = predict(M2, newdata = test_data)
+test_data$pre <- exp(predictions)
+test_data %>% dplyr::select(Reviews, pre) %>% head
+```
+
+------------------------------------------------------------------------
+
+## Phần 7 - Tổng kết
+
+-   
+
+-   
+
+-   
+
+------------------------------------------------------------------------
+
+## Tài Liệu Tham Khảo
+
+1.  Quách Đình Hoàng - Video và Slide bài giảng
+2.  [Winston Chang - R Graphic Cookbook 2nd](https://r-graphics.org/)
+3.  [Nguyễn Văn Tuấn - Hồi quy và khám phá khoa học](https://tiki.vn/mo-hinh-hoi-quy-va-kham-pha-khoa-hoc-p71076508.html?spid=71076509)
+4.  [DANILO DA SILVA - Data Cleaning](https://www.kaggle.com/danilodiogo/google-play-store-eda-plotting-with-highcharts/script)\
+5.  Knn Regression in R (https://koalatea.io/r-knn-regression/)
+6.  
+7.  
